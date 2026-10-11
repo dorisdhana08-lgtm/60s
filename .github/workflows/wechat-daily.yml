@@ -26,15 +26,54 @@ jobs:
 
           sendkey = os.environ["SERVERCHAN_SENDKEY"]
 
-          request = urllib.request.Request(
-              "https://60s.viki.moe/v2/60s",
-              headers={"User-Agent": "60s-wechat-push/1.0"},
-          )
+      from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
-          with urllib.request.urlopen(request, timeout=30) as response:
-              result = json.load(response)
+today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+dates = [today, today - timedelta(days=1)]
 
-          data = result.get("data", result)
+data = None
+last_error = None
+
+for date_value in dates:
+    date_text = date_value.isoformat()
+
+    urls = [
+        f"https://60s-static.viki.moe/60s/{date_text}.json",
+        (
+            "https://cdn.jsdelivr.net/gh/"
+            "vikiboss/60s-static-host@main/static/60s/"
+            f"{date_text}.json"
+        ),
+    ]
+
+    for url in urls:
+        try:
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 daily-60s-wechat/1.0",
+                    "Accept": "application/json",
+                },
+            )
+
+            with urllib.request.urlopen(request, timeout=30) as response:
+                candidate = json.load(response)
+
+            if candidate.get("news"):
+                data = candidate
+                break
+
+        except Exception as error:
+            last_error = error
+
+    if data:
+        break
+
+if not data:
+    raise RuntimeError(
+        f"今天和昨天的新闻均获取失败：{last_error}"
+    )
           date = data.get("date", "今日")
           news = data.get("news", [])
           tip = data.get("tip", "")
