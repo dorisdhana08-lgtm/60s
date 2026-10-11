@@ -1,0 +1,85 @@
+name: 每日60秒微信推送
+
+on:
+  schedule:
+    # UTC 02:30 = 北京时间 10:30
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 获取新闻并推送到微信
+        env:
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          sendkey = os.environ["SERVERCHAN_SENDKEY"]
+
+          request = urllib.request.Request(
+              "https://60s.viki.moe/v2/60s",
+              headers={"User-Agent": "60s-wechat-push/1.0"},
+          )
+
+          with urllib.request.urlopen(request, timeout=30) as response:
+              result = json.load(response)
+
+          data = result.get("data", result)
+          date = data.get("date", "今日")
+          news = data.get("news", [])
+          tip = data.get("tip", "")
+          image = data.get("image", "")
+          source = data.get("link", "https://github.com/vikiboss/60s")
+
+          if not news:
+              raise RuntimeError("60s API 未返回新闻数据")
+
+          lines = [f"## {date} 每天60秒读懂世界"]
+
+          if image:
+              lines.extend(["", f"![每日新闻]({image})"])
+
+          lines.extend([
+              "",
+              *[f"{index}. {item}" for index, item in enumerate(news, 1)],
+          ])
+
+          if tip:
+              lines.extend(["", "---", "", f"> {tip}"])
+
+          lines.extend(["", f"[查看数据来源]({source})"])
+          content = "\n\n".join(lines)
+
+          body = urllib.parse.urlencode({
+              "title": f"{date}｜每天60秒读懂世界",
+              "desp": content,
+          }).encode("utf-8")
+
+          endpoint = f"https://sctapi.ftqq.com/{sendkey}.send"
+          push_request = urllib.request.Request(
+              endpoint,
+              data=body,
+              method="POST",
+          )
+
+          with urllib.request.urlopen(push_request, timeout=30) as response:
+              push_result = json.load(response)
+
+          if push_result.get("code") != 0:
+              raise RuntimeError(
+                  "Server酱推送失败：" +
+                  json.dumps(push_result, ensure_ascii=False)
+              )
+
+          print("微信推送成功")
+          PY
